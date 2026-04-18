@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "GitTidy",
+  "version": "1.2.0",
+  "description": "Tidy up your GitHub — toggle issue noise, navigate project repos, and focus on what matters.",
+  "homepage_url": "https://github.com/j-dahl/git-tidy",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
