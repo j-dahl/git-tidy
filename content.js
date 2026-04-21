@@ -21,6 +21,8 @@
     rename:      { name: "Renames",         prefixes: ["RTE"],        icon: "✏️" },
     assignment:  { name: "Assignments",     prefixes: ["AE", "UAE"],  icon: "👤" },
     milestone:   { name: "Milestones",      prefixes: ["MIE", "DMFE"],icon: "🎯" },
+    parentChild: { name: "Parent/sub-issue",prefixes: ["PIAE", "SIAE"],icon: "🔗" },
+    fieldChange: { name: "Field changes",   prefixes: ["IFAE"],       icon: "📝" },
     locked:      { name: "Lock/unlock",     prefixes: ["LOCKE", "UNLOCKE"], icon: "🔒" },
     pinned:      { name: "Pin/unpin",       prefixes: ["PINNE", "UNPINNE"], icon: "📌" },
   };
@@ -41,6 +43,11 @@
 
   function isProjectPage() {
     return /^\/orgs\/[^/]+\/projects\/\d+/.test(location.pathname);
+  }
+
+  // Returns true if timeline noise events might be present
+  function hasTimelineContent() {
+    return isIssuePage() || isProjectPage();
   }
 
   // ---- persistence -----------------------------------------
@@ -253,10 +260,6 @@
   let repoNavOpen = false;
   let knownRepos = new Map(); // "org/repo" → { count, url }
 
-  function isProjectPage() {
-    return /^\/orgs\/[^/]+\/projects\/\d+/.test(location.pathname);
-  }
-
   function getProjectOrg() {
     const m = location.pathname.match(/^\/orgs\/([^/]+)\/projects\//);
     return m ? m[1] : null;
@@ -416,7 +419,7 @@
   function debouncedScan() {
     clearTimeout(scanTimer);
     scanTimer = setTimeout(() => {
-      if (isIssuePage()) {
+      if (hasTimelineContent()) {
         scanForNoise();
         if (!toggleBtn) createButton();
       } else {
@@ -454,7 +457,7 @@
   function init() {
     loadSettings();
 
-    if (isIssuePage()) {
+    if (hasTimelineContent()) {
       scanForNoise();
       createButton();
     }
