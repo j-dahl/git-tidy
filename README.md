@@ -1,106 +1,76 @@
 # GitTidy 🧹
 
-**Tidy up your GitHub** — a browser extension that declutters GitHub issues, enhances project navigation, and helps you focus on what matters. Works in **Edge**, **Chrome**, and **Safari**.
+**Tidy up your GitHub** — a browser extension that declutters GitHub issues and PRs, surfaces project context, and helps you focus on what matters. Works in **Edge**, **Chrome**, and **Safari**.
 
-## What it does
+## Features
 
-### 🧹 Issue Noise Toggle (issues & PRs)
+### 🧹 Noise Toggle (Issues, PRs & Project Panes)
 
 Hides noisy system-generated timeline events so you can focus on the conversation:
 
-- **Project board events** — "added this to Project", "moved this to Column"
-- **Title changes** — "changed the title X → Y"
-- **Label events** — "added/removed Label"
-- **Assignment changes** — "assigned/unassigned User"
-- **Milestone events** — "added/removed Milestone"
+- **Labels** — "added/removed Label"
+- **Assignments** — "assigned/unassigned User"
+- **Project board** — "added to Project", "moved to Column"
+- **State changes** — closed, reopened
 - **Cross-references** — "mentioned this issue"
-- **And more** — lock, pin, transfer, duplicate, branch events
+- **Renames** — "changed the title"
+- **Milestones** — "added/removed Milestone"
+- **Parent/sub-issue** — hierarchy changes
+- **Field changes** — custom field updates
+- **Lock/pin** — lock, unlock, pin, unpin
+- **PR-specific** — review requests, commit pushes, branch events
 
-A floating toggle button appears in the bottom-right. Your show/hide preference persists across pages.
+A floating 🧹 button appears in the bottom-right corner with per-category checkboxes. When noise is hidden, a subtle "⋯ N system events hidden" bar replaces consecutive items. Your preferences persist across pages.
 
-### 📂 Repo Navigator (project pages)
+### 📋 Project Association Badges
 
-On GitHub Project pages (`/orgs/{org}/projects/{id}`), a **Repos** button appears showing all repositories referenced by items in the project. Click it to open a panel listing every repo with item counts, making it easy to jump between the 5+ repos that a project often spans.
+On issue and PR pages, clickable badges appear near the title showing which GitHub Projects the item belongs to. Click a badge to jump straight to that project board.
 
-## How it works
+### ⏱️ Issue Age Indicator
 
-**On issue/PR pages:** A floating 🧹 toggle button appears in the bottom-right corner. Click it to show/hide system noise. When hidden, a subtle "⋯ N system events hidden" bar replaces consecutive noise items.
+A color-coded age badge appears on issue pages:
 
-**On project pages:** A floating 📂 Repos button appears. Click it to open a dropdown listing all repositories referenced by project items, sorted by item count. Each entry links directly to the repo.
+| Color | Age |
+|-------|-----|
+| 🟢 Green | < 7 days |
+| 🔵 Blue | 7–30 days |
+| 🟠 Amber | 30–90 days |
+| 🔴 Red | > 90 days |
 
-## Quick Install via Copilot CLI
+### 📂 Repo Navigator (Project Pages)
 
-If you have [GitHub Copilot CLI](https://github.com/github/copilot-cli), run these commands in your terminal:
+On GitHub Project pages, a **Repos** button lists all repositories referenced by project items with counts, making cross-repo navigation easy.
 
-**Step 1 — Add the marketplace (one-time):**
+## Install
 
-```
-copilot plugin marketplace add msr-central/github-issue-cleaner
-```
-
-**Step 2 — Install the plugin:**
-
-```
-copilot plugin install git-tidy@git-tidy
-```
-
-**Step 3 — Launch Copilot CLI and install the extension:**
-
-```
-copilot
-```
-
-Then type: `install git-tidy extension`
-
-Copilot will clone the repo, open Edge, and walk you through loading the extension.
-
-To update later, run `copilot plugin update git-tidy` then tell Copilot: `update git-tidy extension`
-
-## Manual Install in Edge
+### Edge
 
 1. Open `edge://extensions/`
 2. Enable **Developer mode** (toggle in the bottom-left)
-3. Click **Load unpacked**
-4. Select this folder (`git-tidy`)
-5. Navigate to any GitHub issue — GitTidy appears automatically
+3. Click **Load unpacked** and select this folder
+4. Navigate to any GitHub issue — GitTidy appears automatically
 
-## Install in Chrome
+Also available on the [Edge Add-ons Store](https://microsoftedge.microsoft.com/addons/detail/gittidy/iebojpkfgfnlnjbhpgbpbcngdhgbkaek).
+
+### Chrome
 
 Same steps but at `chrome://extensions/`.
 
-## Install in Safari
+### Safari
 
-Safari requires converting the extension into an Xcode project using Apple's tools. You need **macOS 14+** and **Xcode 15+**.
-
-### Option A: Use the helper script
+Requires **macOS 14+** and **Xcode 15+**.
 
 ```bash
-cd git-tidy
-chmod +x convert-safari.sh
-./convert-safari.sh
-```
+# Option A: helper script
+cd git-tidy && chmod +x convert-safari.sh && ./convert-safari.sh
 
-### Option B: Manual conversion
-
-```bash
+# Option B: manual
 xcrun safari-web-extension-converter /path/to/git-tidy \
   --app-name "GitTidy" \
   --bundle-identifier "com.git-tidy.extension"
 ```
 
-### Then in Xcode
-
-1. Open the generated `.xcodeproj`
-2. Set your development team under **Signing & Capabilities**
-3. Build & Run (**⌘R**) — this installs the extension into Safari
-4. Open **Safari → Settings → Extensions** and enable **GitTidy**
-
-### Safari notes
-
-- Requires Safari 17+ (macOS Sonoma / iOS 17 or later)
-- The extension uses Manifest V3, which Safari fully supports
-- All APIs used (content scripts, localStorage, MutationObserver) are Safari-compatible
-- For iOS Safari, the converter can generate a universal app targeting both macOS and iOS
+Then build in Xcode (⌘R) and enable in **Safari → Settings → Extensions**.
 
 ## Development
 
@@ -109,15 +79,23 @@ git clone https://github.com/j-dahl/git-tidy.git
 cd git-tidy
 ```
 
-Edit `content.js` to adjust which timeline events are classified as noise. The `NOISE_SELECTORS` array at the top of the file controls which GitHub octicon-based events get hidden.
+Edit `content.js` to adjust noise classification. The `CATEGORIES` object at the top controls which GitHub timeline events are hidden per category.
 
-## Project structure
+## Project Structure
 
 ```
-├── manifest.json          # Extension manifest (Manifest V3)
-├── content.js             # Content script — noise detection & toggle logic
-├── styles.css             # Styles for toggle button & collapsed bars
-├── convert-safari.sh      # Safari conversion helper (requires macOS + Xcode)
-├── icons/                 # Extension icons (16/48/128px)
-└── .github/               # Repo policies (ACL, compliance, JIT)
+├── manifest.json       # Extension manifest (Manifest V3)
+├── content.js          # Content script — noise detection, badges, age indicator
+├── styles.css          # UI styles for all features
+├── convert-safari.sh   # Safari conversion helper (macOS + Xcode)
+├── PRIVACY.md          # Privacy policy
+└── icons/              # Extension icons (16/48/128px)
 ```
+
+## Privacy
+
+GitTidy runs entirely in your browser. It does not collect, transmit, or store any personal data. See [PRIVACY.md](PRIVACY.md) for details.
+
+## License
+
+MIT
