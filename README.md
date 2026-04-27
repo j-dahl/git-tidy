@@ -28,7 +28,35 @@ On GitHub Project pages (`/orgs/{org}/projects/{id}`), a **Repos** button appear
 
 **On project pages:** A floating 📂 Repos button appears. Click it to open a dropdown listing all repositories referenced by project items, sorted by item count. Each entry links directly to the repo.
 
-## Install in Edge
+## Quick Install via Copilot CLI
+
+If you have [GitHub Copilot CLI](https://github.com/github/copilot-cli), run these commands in your terminal:
+
+**Step 1 — Add the marketplace (one-time):**
+
+```
+copilot plugin marketplace add msr-central/github-issue-cleaner
+```
+
+**Step 2 — Install the plugin:**
+
+```
+copilot plugin install git-tidy@git-tidy
+```
+
+**Step 3 — Launch Copilot CLI and install the extension:**
+
+```
+copilot
+```
+
+Then type: `install git-tidy extension`
+
+Copilot will clone the repo, open Edge, and walk you through loading the extension.
+
+To update later, run `copilot plugin update git-tidy` then tell Copilot: `update git-tidy extension`
+
+## Manual Install in Edge
 
 1. Open `edge://extensions/`
 2. Enable **Developer mode** (toggle in the bottom-left)

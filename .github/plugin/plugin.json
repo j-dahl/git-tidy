@@ -1,0 +1,14 @@
+{
+  "name": "git-tidy",
+  "version": "1.3.0",
+  "description": "Install and manage the GitTidy browser extension — cleans up noisy GitHub issue timelines, adds project badges, repo navigation, and age indicators.",
+  "author": {
+    "name": "Jordan Dahl",
+    "url": "https://github.com/j-dahl"
+  },
+  "homepage": "https://github.com/msr-central/github-issue-cleaner",
+  "repository": "https://github.com/msr-central/github-issue-cleaner",
+  "license": "MIT",
+  "keywords": ["github", "browser-extension", "edge", "chrome", "issues", "projects", "cleanup"],
+  "skills": ["./"]
+}

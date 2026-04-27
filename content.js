@@ -1,7 +1,9 @@
 // ===========================================================
-//  GitHub Issue Cleaner — content script
-//  1. Per-category toggle for noisy timeline events on issues/PRs
+//  GitTidy — content script
+//  1. Per-category noise toggle on issues, PRs, and project panes
 //  2. Repo navigator panel on GitHub project pages
+//  3. Project association badges on issue/PR pages
+//  4. Issue age indicator
 // ===========================================================
 
 (function () {
@@ -86,6 +88,41 @@
     return "other";
   }
 
+  // ---- classify PR timeline items by octicon class ----------
+  const PR_NOISE_ICONS = {
+    "octicon-eye":       "reviewRequest",  // requested review
+    "octicon-repo-push": "commits",        // pushed commits
+    "octicon-bookmark":  "crossRef",       // linked issue
+    "octicon-git-branch":"branch",         // branch events
+    "octicon-person":    "assignment",      // assigned
+  };
+
+  const PR_CATEGORIES_EXTRA = {
+    reviewRequest: { name: "Review requests", icon: "👁️" },
+    commits:       { name: "Commit pushes",   icon: "📦" },
+    branch:        { name: "Branch events",   icon: "🌿" },
+  };
+
+  function classifyPRItem(el) {
+    // Skip items that contain actual review comments or PR comments
+    if (el.querySelector(".timeline-comment, .comment-body, .review-comment, .js-comment-container")) {
+      return null;
+    }
+    // Check octicon classes
+    const svgs = el.querySelectorAll("svg[class*='octicon-']");
+    for (const svg of svgs) {
+      const cls = svg.getAttribute("class") || "";
+      for (const [icon, category] of Object.entries(PR_NOISE_ICONS)) {
+        if (cls.includes(icon)) return category;
+      }
+    }
+    // Non-comment TimelineItem with no recognized icon = other noise
+    if (el.querySelector(".TimelineItem") && !el.querySelector(".timeline-comment")) {
+      return "other";
+    }
+    return null;
+  }
+
   // ---- scan for noise elements ------------------------------
   function scanForNoise() {
     // Clean up
@@ -95,6 +132,7 @@
     });
     noiseItems = [];
 
+    // Strategy 1: New-style issue pages (data-timeline-event-id)
     const timelineEls = document.querySelectorAll("[data-timeline-event-id]");
     timelineEls.forEach((el) => {
       const eventId = el.getAttribute("data-timeline-event-id");
@@ -105,6 +143,19 @@
         noiseItems.push({ el, category, prefix: eventId.split("_")[0] });
       }
     });
+
+    // Strategy 2: Old-style PR pages (.js-timeline-item)
+    if (timelineEls.length === 0) {
+      const prItems = document.querySelectorAll(".js-timeline-item");
+      prItems.forEach((el) => {
+        const category = classifyPRItem(el);
+        if (category) {
+          el.classList.add("ghic-noise-item");
+          el.setAttribute("data-ghic-category", category);
+          noiseItems.push({ el, category, prefix: "PR" });
+        }
+      });
+    }
 
     applyVisibility();
     updateButton();
@@ -197,8 +248,9 @@
       </div>
     </div><div class="ghic-panel-list">`;
 
-    // Render categories that have items, plus any with count > 0
-    const activeCategories = Object.entries(CATEGORIES).filter(
+    // Render categories that have items
+    const allCategories = { ...CATEGORIES, ...PR_CATEGORIES_EXTRA };
+    const activeCategories = Object.entries(allCategories).filter(
       ([key]) => counts[key] > 0
     );
 
@@ -412,6 +464,128 @@
     knownRepos.clear();
   }
 
+  // =============================================================
+  //  FEATURE 3 — Project Association Badges
+  //  Scrapes sidebar DOM for project names and surfaces them
+  //  as clickable pills near the issue/PR title.
+  // =============================================================
+
+  let projectBadgesInjected = false;
+
+  function injectProjectBadges() {
+    // Remove previous badges
+    document.querySelectorAll(".ghic-project-badge").forEach((b) => b.remove());
+    projectBadgesInjected = false;
+
+    if (!isIssuePage()) return;
+
+    // Find project titles in sidebar (works on new-style issue pages)
+    const projectTitles = document.querySelectorAll('[data-testid="project-title"]');
+    if (projectTitles.length === 0) return;
+
+    // Find the title area to inject badges
+    const titleEl =
+      document.querySelector("h1.gh-header-title") ||          // old issues
+      document.querySelector('[data-testid="issue-title"]') ||  // new issues
+      document.querySelector(".js-issue-title");                // fallback
+
+    if (!titleEl) return;
+
+    const container = document.createElement("span");
+    container.className = "ghic-project-badge-container";
+
+    projectTitles.forEach((pt) => {
+      const name = pt.textContent.trim();
+      const link = pt.closest("a");
+      const url = link ? link.href : "#";
+
+      const badge = document.createElement("a");
+      badge.className = "ghic-project-badge";
+      badge.href = url;
+      badge.textContent = "📋 " + name;
+      badge.title = "Project: " + name;
+      container.appendChild(badge);
+    });
+
+    // Also check old-style sidebar (PR pages)
+    if (projectTitles.length === 0) {
+      const sidebarItems = document.querySelectorAll(".sidebar-projects-section a, .js-issue-sidebar-form a");
+      sidebarItems.forEach((a) => {
+        if (a.href.includes("/projects/")) {
+          const badge = document.createElement("a");
+          badge.className = "ghic-project-badge";
+          badge.href = a.href;
+          badge.textContent = "📋 " + a.textContent.trim();
+          container.appendChild(badge);
+        }
+      });
+    }
+
+    if (container.children.length > 0) {
+      titleEl.parentElement.insertBefore(container, titleEl.nextSibling);
+      projectBadgesInjected = true;
+    }
+  }
+
+  // =============================================================
+  //  FEATURE 4 — Issue Age Indicator
+  //  Shows how old an issue is with a color-coded badge.
+  // =============================================================
+
+  function injectAgeIndicator() {
+    document.querySelectorAll(".ghic-age-badge").forEach((b) => b.remove());
+
+    if (!isIssuePage()) return;
+
+    // Find the "opened X ago" or creation timestamp
+    const relativeTime =
+      document.querySelector("relative-time") ||
+      document.querySelector("time-ago");
+
+    if (!relativeTime) return;
+
+    const datetime = relativeTime.getAttribute("datetime");
+    if (!datetime) return;
+
+    const created = new Date(datetime);
+    const now = new Date();
+    const daysDiff = Math.floor((now - created) / (1000 * 60 * 60 * 24));
+
+    // Determine staleness level
+    let label, colorClass;
+    if (daysDiff <= 7) {
+      label = daysDiff <= 1 ? "Today" : daysDiff + "d";
+      colorClass = "ghic-age-fresh";
+    } else if (daysDiff <= 30) {
+      label = Math.floor(daysDiff / 7) + "w";
+      colorClass = "ghic-age-recent";
+    } else if (daysDiff <= 90) {
+      label = Math.floor(daysDiff / 30) + "mo";
+      colorClass = "ghic-age-aging";
+    } else if (daysDiff <= 365) {
+      label = Math.floor(daysDiff / 30) + "mo";
+      colorClass = "ghic-age-stale";
+    } else {
+      label = Math.floor(daysDiff / 365) + "y";
+      colorClass = "ghic-age-ancient";
+    }
+
+    const badge = document.createElement("span");
+    badge.className = "ghic-age-badge " + colorClass;
+    badge.textContent = "⏱ " + label;
+    badge.title = "Opened " + daysDiff + " days ago (" + created.toLocaleDateString() + ")";
+
+    // Insert near the issue header
+    const header =
+      document.querySelector('[data-testid="issue-title"]') ||
+      document.querySelector("h1.gh-header-title") ||
+      document.querySelector(".js-issue-title");
+
+    if (header) {
+      header.parentElement.insertBefore(badge, header.nextSibling);
+    }
+  }
+
   // ---- debounced rescan (for SPA navigation) ----------------
   let scanTimer = null;
   let repoScanTimer = null;
@@ -424,6 +598,12 @@
         if (!toggleBtn) createButton();
       } else {
         cleanupNoise();
+      }
+
+      // Project badges and age indicator on issue/PR pages
+      if (isIssuePage()) {
+        if (!projectBadgesInjected) injectProjectBadges();
+        if (!document.querySelector(".ghic-age-badge")) injectAgeIndicator();
       }
 
       if (isProjectPage()) {
