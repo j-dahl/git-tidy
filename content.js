@@ -35,8 +35,14 @@
   // ---- state -----------------------------------------------
   let settings = {};       // category key → boolean (true = hidden)
   let noiseItems = [];     // { el, category, prefix }
+  let manuallyRevealed = new Set(); // elements user clicked to reveal
   let settingsPanel = null;
   let toggleBtn = null;
+  let lastPath = location.pathname;
+  let settingsClickHandler = null;
+  let repoNavClickHandler = null;
+  let escapeHandler = null;
+  let isMutating = false;
 
   // ---- detect page type ------------------------------------
   function isIssuePage() {
@@ -44,7 +50,7 @@
   }
 
   function isProjectPage() {
-    return /^\/orgs\/[^/]+\/projects\/\d+/.test(location.pathname);
+    return /^\/(orgs|users)\/[^/]+\/projects\/\d+/.test(location.pathname);
   }
 
   // Returns true if timeline noise events might be present
@@ -63,10 +69,14 @@
         Object.keys(CATEGORIES).forEach((k) => { settings[k] = true; });
         // Keep state changes visible by default
         settings.stateChange = false;
+        settings.other = false;
       }
     } catch (e) {
       Object.keys(CATEGORIES).forEach((k) => { settings[k] = true; });
+      settings.stateChange = false;
+      settings.other = false;
     }
+    if (settings.other === undefined) settings.other = false;
   }
 
   function saveSettings() {
@@ -76,7 +86,11 @@
   }
 
   // ---- classify a timeline event by its ID prefix -----------
-  function classifyEvent(eventId) {
+  function classifyEvent(eventId, el) {
+    if (el?.querySelector(".timeline-comment, .comment-body, .review-comment, .js-comment-container")) {
+      return null;
+    }
+
     const prefix = eventId.split("_")[0];
     // Check if it's a "keep" item
     if (KEEP_PREFIXES.some((p) => prefix === p)) return null;
@@ -84,8 +98,8 @@
     for (const [key, cat] of Object.entries(CATEGORIES)) {
       if (cat.prefixes.some((p) => prefix === p)) return key;
     }
-    // Unknown system event — classify as "other"
-    return "other";
+    // Unknown system event — leave visible unless explicitly classified elsewhere.
+    return null;
   }
 
   // ---- classify PR timeline items by octicon class ----------
@@ -125,9 +139,15 @@
 
   // ---- scan for noise elements ------------------------------
   function scanForNoise() {
-    // Clean up
+    isMutating = true;
+    // Clean up — but preserve manually revealed items' visual state
     noiseItems.forEach(({ el }) => {
-      el.classList.remove("ghic-noise-item", "ghic-noise-hidden");
+      if (!manuallyRevealed.has(el)) {
+        el.classList.remove("ghic-noise-item", "ghic-noise-hidden");
+      } else {
+        el.classList.remove("ghic-noise-item");
+        // keep ghic-noise-hidden removed (they were revealed)
+      }
       el.removeAttribute("data-ghic-category");
     });
     noiseItems = [];
@@ -136,7 +156,7 @@
     const timelineEls = document.querySelectorAll("[data-timeline-event-id]");
     timelineEls.forEach((el) => {
       const eventId = el.getAttribute("data-timeline-event-id");
-      const category = classifyEvent(eventId);
+      const category = classifyEvent(eventId, el);
       if (category) {
         el.classList.add("ghic-noise-item");
         el.setAttribute("data-ghic-category", category);
@@ -157,16 +177,67 @@
       });
     }
 
+    isMutating = false;
     applyVisibility();
     updateButton();
   }
 
   // ---- apply show/hide based on per-category settings -------
   function applyVisibility() {
+    isMutating = true;
     noiseItems.forEach(({ el, category }) => {
+      // Don't re-hide items the user manually revealed
+      if (manuallyRevealed.has(el)) return;
       const hidden = settings[category] !== false; // default to hidden
       el.classList.toggle("ghic-noise-hidden", hidden);
     });
+    isMutating = false;
+    insertHiddenPlaceholders();
+  }
+
+  function insertHiddenPlaceholders() {
+    isMutating = true;
+    // Remove existing placeholders
+    document.querySelectorAll(".ghic-hidden-placeholder").forEach(p => p.remove());
+
+    if (noiseItems.length === 0) { isMutating = false; return; }
+
+    // Group consecutive hidden items
+    let run = [];
+    const allTimeline = document.querySelectorAll("[data-timeline-event-id], .js-timeline-item");
+    
+    allTimeline.forEach((el) => {
+      if (el.classList.contains("ghic-noise-hidden")) {
+        run.push(el);
+      } else {
+        if (run.length > 0) {
+          createPlaceholder(run);
+          run = [];
+        }
+      }
+    });
+    if (run.length > 0) createPlaceholder(run);
+    isMutating = false;
+  }
+
+  function createPlaceholder(hiddenItems) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "ghic-hidden-placeholder";
+    placeholder.textContent = `⋯ ${hiddenItems.length} system event${hiddenItems.length !== 1 ? "s" : ""} hidden`;
+    placeholder.title = "Click to reveal hidden events";
+    const items = [...hiddenItems];
+    placeholder.addEventListener("click", () => {
+      isMutating = true;
+      items.forEach(item => {
+        item.classList.remove("ghic-noise-hidden");
+        manuallyRevealed.add(item);
+      });
+      placeholder.remove();
+      isMutating = false;
+      updateButton();
+    });
+    const lastHidden = hiddenItems[hiddenItems.length - 1];
+    lastHidden.parentNode.insertBefore(placeholder, lastHidden.nextSibling);
   }
 
   // ---- floating settings button & panel ---------------------
@@ -175,7 +246,10 @@
 
     toggleBtn = document.createElement("button");
     toggleBtn.id = "ghic-toggle-btn";
-    toggleBtn.title = "GitHub Issue Cleaner — toggle noise categories";
+    toggleBtn.title = "GitTidy — toggle noise categories (Shift+H)";
+    toggleBtn.setAttribute("aria-label", "GitTidy noise settings (Shift+H)");
+    toggleBtn.setAttribute("aria-expanded", "false");
+    toggleBtn.setAttribute("aria-controls", "ghic-settings-panel");
     toggleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleSettingsPanel();
@@ -183,12 +257,15 @@
     document.body.appendChild(toggleBtn);
 
     // Close panel on outside click
-    document.addEventListener("click", (e) => {
+    if (settingsClickHandler) document.removeEventListener("click", settingsClickHandler);
+    settingsClickHandler = (e) => {
       if (settingsPanel && settingsPanel.style.display !== "none" &&
           !settingsPanel.contains(e.target) && e.target !== toggleBtn) {
         settingsPanel.style.display = "none";
+        if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
       }
-    });
+    };
+    document.addEventListener("click", settingsClickHandler);
 
     updateButton();
   }
@@ -203,13 +280,14 @@
     }
     toggleBtn.style.display = "";
     toggleBtn.innerHTML = `
-      <span class="ghic-icon">🧹</span>
+      <span class="ghic-icon" aria-hidden="true">🧹</span>
       <span>Noise</span>
       <span class="ghic-count">${hidden}/${total}</span>
     `;
   }
 
   function removeButton() {
+    if (settingsClickHandler) { document.removeEventListener("click", settingsClickHandler); settingsClickHandler = null; }
     if (toggleBtn) { toggleBtn.remove(); toggleBtn = null; }
     if (settingsPanel) { settingsPanel.remove(); settingsPanel = null; }
   }
@@ -219,16 +297,20 @@
     if (!settingsPanel) {
       settingsPanel = document.createElement("div");
       settingsPanel.id = "ghic-settings-panel";
+      settingsPanel.setAttribute("role", "dialog");
+      settingsPanel.setAttribute("aria-label", "GitTidy noise settings");
       document.body.appendChild(settingsPanel);
     }
 
     if (settingsPanel.style.display !== "none" && settingsPanel.innerHTML) {
       settingsPanel.style.display = "none";
+      if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
       return;
     }
 
     renderSettingsPanel();
     settingsPanel.style.display = "";
+    if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
   }
 
   function renderSettingsPanel() {
@@ -241,7 +323,7 @@
     });
 
     let html = `<div class="ghic-panel-header">
-      <span>Toggle noise categories</span>
+      <span>Show these event types</span>
       <div class="ghic-panel-actions">
         <button id="ghic-hide-all" title="Hide all">Hide all</button>
         <button id="ghic-show-all" title="Show all">Show all</button>
@@ -264,7 +346,7 @@
       const hidden = settings[key] !== false;
       html += `
         <label class="ghic-category-row" data-category="${key}">
-          <input type="checkbox" ${hidden ? "checked" : ""} data-cat="${key}" />
+          <input type="checkbox" ${hidden ? "" : "checked"} data-cat="${key}" />
           <span class="ghic-cat-icon">${cat.icon}</span>
           <span class="ghic-cat-name">${cat.name}</span>
           <span class="ghic-cat-count">${count}</span>
@@ -277,15 +359,17 @@
     // Bind checkbox events
     settingsPanel.querySelectorAll("input[data-cat]").forEach((cb) => {
       cb.addEventListener("change", () => {
-        settings[cb.dataset.cat] = cb.checked;
+        settings[cb.dataset.cat] = !cb.checked;
         saveSettings();
         applyVisibility();
         updateButton();
+        insertHiddenPlaceholders();
       });
     });
 
     // Bind hide-all / show-all
     settingsPanel.querySelector("#ghic-hide-all").addEventListener("click", () => {
+      manuallyRevealed.clear();
       Object.keys(counts).forEach((k) => { settings[k] = true; });
       saveSettings();
       applyVisibility();
@@ -293,6 +377,7 @@
       renderSettingsPanel();
     });
     settingsPanel.querySelector("#ghic-show-all").addEventListener("click", () => {
+      manuallyRevealed.clear();
       Object.keys(counts).forEach((k) => { settings[k] = false; });
       saveSettings();
       applyVisibility();
@@ -311,53 +396,62 @@
   let repoNavPanel = null;
   let repoNavOpen = false;
   let knownRepos = new Map(); // "org/repo" → { count, url }
+  let seenItemUrls = new Set(); // persistent dedup across scans
 
-  function getProjectOrg() {
-    const m = location.pathname.match(/^\/orgs\/([^/]+)\/projects\//);
+  function getProjectOwner() {
+    const m = location.pathname.match(/^\/(?:orgs|users)\/([^/]+)\/projects\//);
     return m ? m[1] : null;
   }
 
   function scanForRepos() {
-    const repos = new Map();
+    // Accumulate into knownRepos across scans (GitHub virtualizes project boards)
+    const root = document.querySelector('[data-testid="project-view"]')
+      || document.querySelector("main")
+      || document.body;
 
-    // Strategy 1: scan all links pointing to issues/PRs
-    document.querySelectorAll('a[href]').forEach((a) => {
-      const m = a.href.match(
-        /github\.com\/([^/]+\/[^/]+)\/(issues|pull)\/\d+/
-      );
+    root.querySelectorAll('a[href]').forEach((a) => {
+      if (a.closest("[id^='ghic-']")) return;
+      const m = a.href.match(/github\.com\/([^/]+\/[^/]+)\/(issues|pull)\/(\d+)/);
       if (m) {
         const repoPath = m[1];
-        const entry = repos.get(repoPath) || { count: 0, url: `https://github.com/${repoPath}` };
+        const itemKey = `${repoPath}/${m[2]}/${m[3]}`;
+        if (seenItemUrls.has(itemKey)) return;
+        seenItemUrls.add(itemKey);
+        const entry = knownRepos.get(repoPath) || { count: 0, url: `https://github.com/${repoPath}` };
         entry.count++;
-        repos.set(repoPath, entry);
+        knownRepos.set(repoPath, entry);
       }
     });
 
-    // Strategy 2: scan text nodes that look like "repo#123" references
-    const org = getProjectOrg();
+    const org = getProjectOwner();
     if (org) {
-      const walker = document.createTreeWalker(
-        document.body,
-        NodeFilter.SHOW_TEXT,
-        null
-      );
+      const walkRoot = document.querySelector('[data-testid="project-view"]')
+        || document.querySelector("main")
+        || document.body;
+      const walker = document.createTreeWalker(walkRoot, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          const tag = parent.tagName;
+          if (tag === "SCRIPT" || tag === "STYLE" || tag === "SVG") return NodeFilter.FILTER_REJECT;
+          if (parent.closest("[id^='ghic-']")) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
       const pattern = /([A-Za-z0-9_.-]+)#\d+/g;
       while (walker.nextNode()) {
         const text = walker.currentNode.textContent;
         let match;
         while ((match = pattern.exec(text)) !== null) {
           const repoName = match[1];
-          // Skip common false positives
           if (repoName.length < 2 || /^\d+$/.test(repoName)) continue;
           const repoPath = `${org}/${repoName}`;
-          if (!repos.has(repoPath)) {
-            repos.set(repoPath, { count: 1, url: `https://github.com/${repoPath}` });
+          if (!knownRepos.has(repoPath)) {
+            knownRepos.set(repoPath, { count: 1, url: `https://github.com/${repoPath}` });
           }
         }
       }
     }
-
-    knownRepos = repos;
   }
 
   function createRepoNavButton() {
@@ -366,6 +460,9 @@
     repoNavBtn = document.createElement("button");
     repoNavBtn.id = "ghic-repo-nav-btn";
     repoNavBtn.title = "Project repositories";
+    repoNavBtn.setAttribute("aria-label", "Project repositories");
+    repoNavBtn.setAttribute("aria-expanded", "false");
+    repoNavBtn.setAttribute("aria-controls", "ghic-repo-nav-panel");
     repoNavBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       repoNavOpen = !repoNavOpen;
@@ -374,7 +471,8 @@
     document.body.appendChild(repoNavBtn);
 
     // Close panel when clicking outside
-    document.addEventListener("click", (e) => {
+    if (repoNavClickHandler) document.removeEventListener("click", repoNavClickHandler);
+    repoNavClickHandler = (e) => {
       if (
         repoNavOpen &&
         repoNavPanel &&
@@ -384,7 +482,8 @@
         repoNavOpen = false;
         updateRepoNavPanel();
       }
-    });
+    };
+    document.addEventListener("click", repoNavClickHandler);
 
     updateRepoNavButton();
   }
@@ -398,7 +497,7 @@
     }
     repoNavBtn.style.display = "";
     repoNavBtn.innerHTML = `
-      <span class="ghic-icon">📂</span>
+      <span class="ghic-icon" aria-hidden="true">📂</span>
       <span>Repos</span>
       <span class="ghic-count">${count}</span>
     `;
@@ -413,15 +512,18 @@
 
     if (!repoNavOpen || knownRepos.size === 0) {
       repoNavPanel.style.display = "none";
+      if (repoNavBtn) repoNavBtn.setAttribute("aria-expanded", "false");
       return;
     }
+
+    if (repoNavBtn) repoNavBtn.setAttribute("aria-expanded", "true");
 
     // Sort repos by item count descending
     const sorted = [...knownRepos.entries()].sort(
       (a, b) => b[1].count - a[1].count
     );
 
-    const org = getProjectOrg();
+    const org = getProjectOwner();
     let html = `<div class="ghic-repo-nav-header">
       <span>Repositories in this project</span>
       <button id="ghic-repo-nav-close" title="Close">✕</button>
@@ -458,10 +560,14 @@
   }
 
   function removeRepoNav() {
+    clearTimeout(repoScanTimer);
+    repoScanTimer = null;
+    if (repoNavClickHandler) { document.removeEventListener("click", repoNavClickHandler); repoNavClickHandler = null; }
     if (repoNavBtn) { repoNavBtn.remove(); repoNavBtn = null; }
     if (repoNavPanel) { repoNavPanel.remove(); repoNavPanel = null; }
     repoNavOpen = false;
     knownRepos.clear();
+    seenItemUrls.clear();
   }
 
   // =============================================================
@@ -471,17 +577,42 @@
   // =============================================================
 
   let projectBadgesInjected = false;
+  let badgeRetryTimer = null;
+  let badgeObserver = null;
 
   function injectProjectBadges() {
     // Remove previous badges
-    document.querySelectorAll(".ghic-project-badge").forEach((b) => b.remove());
+    document.querySelectorAll(".ghic-project-badge, .ghic-project-badge-container").forEach((b) => b.remove());
     projectBadgesInjected = false;
 
-    if (!isIssuePage()) return;
+    if (!isIssuePage()) { stopBadgeRetry(); return; }
 
-    // Find project titles in sidebar (works on new-style issue pages)
-    const projectTitles = document.querySelectorAll('[data-testid="project-title"]');
-    if (projectTitles.length === 0) return;
+    // Collect project names from all sidebar sources
+    const projects = [];
+
+    // New-style sidebar: data-testid="project-title"
+    document.querySelectorAll('[data-testid="project-title"]').forEach((pt) => {
+      const name = pt.textContent.trim();
+      const link = pt.closest("a");
+      projects.push({ name, url: link ? link.href : "#" });
+    });
+
+    // Old-style sidebar (some PR pages)
+    if (projects.length === 0) {
+      document.querySelectorAll(".sidebar-projects-section a, .js-issue-sidebar-form a").forEach((a) => {
+        if (a.href.includes("/projects/")) {
+          projects.push({ name: a.textContent.trim(), url: a.href });
+        }
+      });
+    }
+
+    // If no projects found yet, start watching for sidebar to load
+    if (projects.length === 0) {
+      startBadgeRetry();
+      return;
+    }
+
+    stopBadgeRetry();
 
     // Find the title area to inject badges
     const titleEl =
@@ -494,11 +625,7 @@
     const container = document.createElement("span");
     container.className = "ghic-project-badge-container";
 
-    projectTitles.forEach((pt) => {
-      const name = pt.textContent.trim();
-      const link = pt.closest("a");
-      const url = link ? link.href : "#";
-
+    projects.forEach(({ name, url }) => {
       const badge = document.createElement("a");
       badge.className = "ghic-project-badge";
       badge.href = url;
@@ -507,24 +634,54 @@
       container.appendChild(badge);
     });
 
-    // Also check old-style sidebar (PR pages)
-    if (projectTitles.length === 0) {
-      const sidebarItems = document.querySelectorAll(".sidebar-projects-section a, .js-issue-sidebar-form a");
-      sidebarItems.forEach((a) => {
-        if (a.href.includes("/projects/")) {
-          const badge = document.createElement("a");
-          badge.className = "ghic-project-badge";
-          badge.href = a.href;
-          badge.textContent = "📋 " + a.textContent.trim();
-          container.appendChild(badge);
-        }
-      });
-    }
-
     if (container.children.length > 0) {
       titleEl.parentElement.insertBefore(container, titleEl.nextSibling);
       projectBadgesInjected = true;
     }
+  }
+
+  // Retry mechanism: watch the sidebar for project data to appear
+  function startBadgeRetry() {
+    if (badgeObserver) return; // already watching
+
+    // Observe the sidebar area for new children (project section loads async)
+    const sidebar = document.querySelector('[data-testid="sidebar-projects-section"]')
+      || document.querySelector(".js-issue-sidebar-form")
+      || document.querySelector('[class*="sidebar"]');
+
+    if (sidebar) {
+      badgeObserver = new MutationObserver(() => {
+        const found = document.querySelectorAll('[data-testid="project-title"]');
+        if (found.length > 0) {
+          stopBadgeRetry();
+          injectProjectBadges();
+        }
+      });
+      badgeObserver.observe(sidebar, { childList: true, subtree: true });
+    }
+
+    // Also poll briefly in case the sidebar element itself loads late
+    let attempts = 0;
+    const maxAttempts = 15; // ~7.5 seconds total
+    clearInterval(badgeRetryTimer);
+    badgeRetryTimer = setInterval(() => {
+      attempts++;
+      if (projectBadgesInjected || attempts >= maxAttempts || !isIssuePage()) {
+        stopBadgeRetry();
+        return;
+      }
+      const found = document.querySelectorAll('[data-testid="project-title"]');
+      if (found.length > 0) {
+        stopBadgeRetry();
+        injectProjectBadges();
+      }
+    }, 500);
+  }
+
+  function stopBadgeRetry() {
+    clearInterval(badgeRetryTimer);
+    badgeRetryTimer = null;
+    if (badgeObserver) { badgeObserver.disconnect(); badgeObserver = null; }
   }
 
   // =============================================================
@@ -538,9 +695,13 @@
     if (!isIssuePage()) return;
 
     // Find the "opened X ago" or creation timestamp
-    const relativeTime =
-      document.querySelector("relative-time") ||
-      document.querySelector("time-ago");
+    const headerArea =
+      document.querySelector(".gh-header-meta") ||
+      document.querySelector('[data-testid="issue-metadata"]') ||
+      document.querySelector(".gh-header");
+    const relativeTime = headerArea
+      ? (headerArea.querySelector("relative-time") || headerArea.querySelector("time-ago"))
+      : (document.querySelector("relative-time") || document.querySelector("time-ago"));
 
     if (!relativeTime) return;
 
@@ -548,6 +709,8 @@
     if (!datetime) return;
 
     const created = new Date(datetime);
+    if (Number.isNaN(created.getTime())) return;
+
     const now = new Date();
     const daysDiff = Math.floor((now - created) / (1000 * 60 * 60 * 24));
 
@@ -593,6 +756,14 @@
   function debouncedScan() {
     clearTimeout(scanTimer);
     scanTimer = setTimeout(() => {
+      // Detect SPA route change: reset per-page state
+      if (location.pathname !== lastPath) {
+        lastPath = location.pathname;
+        projectBadgesInjected = false;
+        manuallyRevealed.clear();
+        stopBadgeRetry();
+      }
+
       if (hasTimelineContent()) {
         scanForNoise();
         if (!toggleBtn) createButton();
@@ -617,6 +788,7 @@
   function debouncedRepoScan() {
     clearTimeout(repoScanTimer);
     repoScanTimer = setTimeout(() => {
+      if (!isProjectPage()) return;
       scanForRepos();
       if (!repoNavBtn) createRepoNavButton();
       updateRepoNavButton();
@@ -630,6 +802,7 @@
       el.removeAttribute("data-ghic-category");
     });
     noiseItems = [];
+    document.querySelectorAll(".ghic-hidden-placeholder").forEach(p => p.remove());
     removeButton();
   }
 
@@ -648,13 +821,55 @@
     }
 
     // GitHub uses Turbo/pjax for navigation — watch for URL changes
-    const observer = new MutationObserver(() => debouncedScan());
+    const observer = new MutationObserver((mutations) => {
+      if (isMutating) return;
+      // Skip mutations that only affect our own elements
+      const dominated = mutations.every(m => {
+        const target = m.target;
+        return target.id?.startsWith("ghic-") || 
+               target.classList?.contains("ghic-noise-hidden") ||
+               target.classList?.contains("ghic-noise-item") ||
+               target.closest?.("[id^='ghic-']");
+      });
+      if (dominated) return;
+      debouncedScan();
+    });
     observer.observe(document.body, { childList: true, subtree: true });
 
     // Also listen for turbo navigation events
     document.addEventListener("turbo:load", debouncedScan);
     document.addEventListener("turbo:render", debouncedScan);
     document.addEventListener("pjax:end", debouncedScan);
+
+    // Global Escape key: close any open panels
+    // Shift+H: toggle noise settings panel (works from anywhere on page)
+    if (escapeHandler) document.removeEventListener("keydown", escapeHandler);
+    escapeHandler = (e) => {
+      // Don't intercept when user is typing in an input/textarea
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || 
+          document.activeElement?.isContentEditable) return;
+
+      if (e.key === "Escape") {
+        if (settingsPanel && settingsPanel.style.display !== "none") {
+          settingsPanel.style.display = "none";
+          if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
+        }
+        if (repoNavOpen) {
+          repoNavOpen = false;
+          updateRepoNavPanel();
+        }
+      }
+
+      // Shift+H: toggle noise settings (only on pages with noise)
+      if (e.key === "H" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (toggleBtn && toggleBtn.style.display !== "none") {
+          e.preventDefault();
+          toggleSettingsPanel();
+        }
+      }
+    };
+    document.addEventListener("keydown", escapeHandler);
   }
 
   // Wait for DOM ready

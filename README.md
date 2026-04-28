@@ -1,43 +1,43 @@
-# GitTidy 🧹
+# GitTidy ≡ƒº╣
 
-**Tidy up your GitHub** — a browser extension that declutters GitHub issues and PRs, surfaces project context, and helps you focus on what matters. Works in **Edge**, **Chrome**, and **Safari**.
+**Tidy up your GitHub** ΓÇö a browser extension that declutters GitHub issues and PRs, surfaces project context, and helps you focus on what matters. Works in **Edge**, **Chrome**, and **Safari**.
 
 ## Features
 
-### 🧹 Noise Toggle (Issues, PRs & Project Panes)
+### ≡ƒº╣ Noise Toggle (Issues, PRs & Project Panes)
 
 Hides noisy system-generated timeline events so you can focus on the conversation:
 
-- **Labels** — "added/removed Label"
-- **Assignments** — "assigned/unassigned User"
-- **Project board** — "added to Project", "moved to Column"
-- **State changes** — closed, reopened
-- **Cross-references** — "mentioned this issue"
-- **Renames** — "changed the title"
-- **Milestones** — "added/removed Milestone"
-- **Parent/sub-issue** — hierarchy changes
-- **Field changes** — custom field updates
-- **Lock/pin** — lock, unlock, pin, unpin
-- **PR-specific** — review requests, commit pushes, branch events
+- **Labels** ΓÇö "added/removed Label"
+- **Assignments** ΓÇö "assigned/unassigned User"
+- **Project board** ΓÇö "added to Project", "moved to Column"
+- **State changes** ΓÇö closed, reopened
+- **Cross-references** ΓÇö "mentioned this issue"
+- **Renames** ΓÇö "changed the title"
+- **Milestones** ΓÇö "added/removed Milestone"
+- **Parent/sub-issue** ΓÇö hierarchy changes
+- **Field changes** ΓÇö custom field updates
+- **Lock/pin** ΓÇö lock, unlock, pin, unpin
+- **PR-specific** ΓÇö review requests, commit pushes, branch events
 
-A floating 🧹 button appears in the bottom-right corner with per-category checkboxes. When noise is hidden, a subtle "⋯ N system events hidden" bar replaces consecutive items. Your preferences persist across pages.
+A floating ≡ƒº╣ button appears in the bottom-right corner with per-category checkboxes. When noise is hidden, a subtle "Γï» N system events hidden" bar replaces consecutive items. Your preferences persist across pages. Press **Shift+H** to toggle the panel from anywhere on the page.
 
-### 📋 Project Association Badges
+### ≡ƒôï Project Association Badges
 
 On issue and PR pages, clickable badges appear near the title showing which GitHub Projects the item belongs to. Click a badge to jump straight to that project board.
 
-### ⏱️ Issue Age Indicator
+### ΓÅ▒∩╕Å Issue Age Indicator
 
 A color-coded age badge appears on issue pages:
 
 | Color | Age |
 |-------|-----|
-| 🟢 Green | < 7 days |
-| 🔵 Blue | 7–30 days |
-| 🟠 Amber | 30–90 days |
-| 🔴 Red | > 90 days |
+| ≡ƒƒó Green | < 7 days |
+| ≡ƒö╡ Blue | 7ΓÇô30 days |
+| ≡ƒƒá Amber | 30ΓÇô90 days |
+| ≡ƒö┤ Red | > 90 days |
 
-### 📂 Repo Navigator (Project Pages)
+### ≡ƒôé Repo Navigator (Project Pages)
 
 On GitHub Project pages, a **Repos** button lists all repositories referenced by project items with counts, making cross-repo navigation easy.
 
@@ -48,7 +48,7 @@ On GitHub Project pages, a **Repos** button lists all repositories referenced by
 1. Open `edge://extensions/`
 2. Enable **Developer mode** (toggle in the bottom-left)
 3. Click **Load unpacked** and select this folder
-4. Navigate to any GitHub issue — GitTidy appears automatically
+4. Navigate to any GitHub issue ΓÇö GitTidy appears automatically
 
 Also available on the [Edge Add-ons Store](https://microsoftedge.microsoft.com/addons/detail/gittidy/iebojpkfgfnlnjbhpgbpbcngdhgbkaek).
 
@@ -70,7 +70,7 @@ xcrun safari-web-extension-converter /path/to/git-tidy \
   --bundle-identifier "com.git-tidy.extension"
 ```
 
-Then build in Xcode (⌘R) and enable in **Safari → Settings → Extensions**.
+Then build in Xcode (ΓîÿR) and enable in **Safari ΓåÆ Settings ΓåÆ Extensions**.
 
 ## Development
 
@@ -84,12 +84,12 @@ Edit `content.js` to adjust noise classification. The `CATEGORIES` object at the
 ## Project Structure
 
 ```
-├── manifest.json       # Extension manifest (Manifest V3)
-├── content.js          # Content script — noise detection, badges, age indicator
-├── styles.css          # UI styles for all features
-├── convert-safari.sh   # Safari conversion helper (macOS + Xcode)
-├── PRIVACY.md          # Privacy policy
-└── icons/              # Extension icons (16/48/128px)
+Γö£ΓöÇΓöÇ manifest.json       # Extension manifest (Manifest V3)
+Γö£ΓöÇΓöÇ content.js          # Content script ΓÇö noise detection, badges, age indicator
+Γö£ΓöÇΓöÇ styles.css          # UI styles for all features
+Γö£ΓöÇΓöÇ convert-safari.sh   # Safari conversion helper (macOS + Xcode)
+Γö£ΓöÇΓöÇ PRIVACY.md          # Privacy policy
+ΓööΓöÇΓöÇ icons/              # Extension icons (16/48/128px)
 ```
 
 ## Privacy

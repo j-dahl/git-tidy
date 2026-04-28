@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GitTidy",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Tidy up your GitHub — toggle issue noise, navigate project repos, and focus on what matters.",
   "homepage_url": "https://github.com/j-dahl/git-tidy",
   "permissions": ["storage"],
